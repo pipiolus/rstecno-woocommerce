@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "db:check": "ts-node src/db/checkDb.ts"
+    "db:check": "ts-node src/db/checkDb.ts",
+    "sync:one": "ts-node src/dev/syncOne.ts"
   },
   "author": "",
   "license": "ISC",
