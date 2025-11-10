@@ -5,7 +5,8 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "db:check": "ts-node src/db/checkDb.ts",
-    "sync:one": "ts-node src/dev/syncOne.ts"
+    "sync:one": "ts-node src/dev/syncOne.ts",
+    "sync:diffs": "ts-node src/jobs/syncDiffsOnce.ts"
   },
   "author": "",
   "license": "ISC",
@@ -17,7 +18,6 @@
     "sequelize": "^6.37.7"
   },
   "devDependencies": {
-    "@types/axios": "^0.9.36",
     "@types/dotenv": "^6.1.1",
     "@types/node": "^24.10.0",
     "@typescript-eslint/eslint-plugin": "^6.21.0",
