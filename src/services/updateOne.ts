@@ -1,12 +1,11 @@
+// src/services/updateOne.ts
 import axios from "axios";
 import { sequelize } from "../db/sequelize";
+import { withRetry } from "./util";
 import { SigeWooWoocommer } from "../db/models/sigeWooWooCommer";
-import { ENV } from "../config/env";
-import { toPriceString, toStockInt } from "./util";
 
-// Woo client
-const wc: Axios.AxiosInstance = axios.create({
-  baseURL: process.env.WC_BASE, // e.g., https://store.com/wp-json/wc/v3
+const wc = axios.create({
+  baseURL: process.env.WC_BASE,
   params: {
     consumer_key: process.env.WC_CK,
     consumer_secret: process.env.WC_CS,
@@ -14,35 +13,42 @@ const wc: Axios.AxiosInstance = axios.create({
   timeout: 20000,
 });
 
+// optional DRY_RUN toggle
+const DRY = String(process.env.DRY_RUN || "").toLowerCase() === "true";
+
+const toPriceString = (n: number | null | undefined) =>
+  Number(n ?? 0).toFixed(2);
+const toStockInt = (n: number | null | undefined) =>
+  Math.max(0, Math.trunc(Number(n ?? 0)));
+
 async function resolveWooIdBySku(sku: string): Promise<number | null> {
-  const { data } = await wc.get("/products", { params: { sku } });
+  const { data } = await withRetry(
+    () => wc.get("/products", { params: { sku } }),
+    {
+      tries: Number(process.env.MAX_RETRIES || 3),
+      baseDelayMs: Number(process.env.INIT_BACKOFF_MS || 500),
+      onRetry: ({ attempt, delay, err }) => {
+        console.warn(
+          `[woo GET /products?sku=${sku}] retry ${attempt} in ${delay}ms`,
+          err?.message || err
+        );
+      },
+    }
+  );
   if (Array.isArray(data) && data[0]?.id) return Number(data[0].id);
   return null;
 }
 
-/**
- * Updates Woo for one (sku, listId) using Antártida price/stock,
- * then stamps the DB if Woo returned OK.
- *
- * @param sku ART_IdArticulo
- * @param rsTecnoPrice PAL_PrecVtaArt (Antártida)
- * @param rsTecnoStock ADS_Disponible (Antártida)
- */
 export async function updateWooAndStampDB(
   sku: string,
-  rsTecnoPrice: number | null | undefined,
-  rsTecnoStock: number | null | undefined
+  antPrice: number | null | undefined,
+  antStock: number | null | undefined
 ): Promise<{ sku: string; wooId: number; updated: boolean }> {
-  // 1) load current row
   const row = await SigeWooWoocommer.findOne({
     where: { ART_IdArticulo: sku },
-    lock: undefined,
   });
-  if (!row) {
-    throw new Error(`Row not found for sku=${sku}`);
-  }
+  if (!row) throw new Error(`Row not found for sku=${sku}`);
 
-  // 2) ensure we have a Woo product ID
   let wooId: number | null =
     row.WOO_IdProducto && !Number.isNaN(Number(row.WOO_IdProducto))
       ? Number(row.WOO_IdProducto)
@@ -50,35 +56,41 @@ export async function updateWooAndStampDB(
 
   if (!wooId) {
     wooId = await resolveWooIdBySku(sku);
-    if (!wooId) {
-      throw new Error(`Woo product not found by SKU: ${sku}`);
-    }
+    if (!wooId) throw new Error(`Woo product not found by SKU: ${sku}`);
   }
 
-  // 3) build Woo payload
-  const quantity = toStockInt(rsTecnoStock);
-  const priceString = toPriceString(rsTecnoPrice);
-
+  const qty = toStockInt(antStock);
+  const priceStr = toPriceString(antPrice);
   const payload = {
-    regular_price: priceString,
+    regular_price: priceStr,
     manage_stock: true,
-    stock_quantity: quantity,
+    stock_quantity: qty,
   };
 
-  // 4) PUT to Woo
-  await wc.put(`/products/${wooId}`, payload);
+  if (!DRY) {
+    await withRetry(() => wc.put(`/products/${wooId}`, payload), {
+      tries: Number(process.env.MAX_RETRIES || 3),
+      baseDelayMs: Number(process.env.INIT_BACKOFF_MS || 500),
+      onRetry: ({ attempt, delay, err }) => {
+        const status = err?.response?.status;
+        console.warn(
+          `[woo PUT /products/${wooId}] retry ${attempt} in ${delay}ms (status=${status})`
+        );
+      },
+    });
+  } else {
+    console.log(`[DRY_RUN] would PUT /products/${wooId}`, payload);
+  }
 
-  // 5) stamp DB (wrap in a small txn for consistency)
-  await sequelize.transaction(async (transacton) => {
-    // Write back Woo ID if we just discovered it
+  await sequelize.transaction(async (t) => {
     if (!row.WOO_IdProducto || String(row.WOO_IdProducto) !== String(wooId)) {
       row.WOO_IdProducto = String(wooId);
     }
-    row.WOO_PrecVtaArt = Number(priceString);
-    row.WOO_Disponible = quantity;
+    row.WOO_PrecVtaArt = Number(priceStr);
+    row.WOO_Disponible = qty;
+    row.WOO_Activo2 = row.WOO_Activo2 ?? "S"; // or set 'S' explicitly if agreed
     row.WOO_FecUltActWeb = new Date();
-
-    await row.save({ transaction: transacton });
+    await row.save({ transaction: t });
   });
 
   return { sku, wooId, updated: true };
