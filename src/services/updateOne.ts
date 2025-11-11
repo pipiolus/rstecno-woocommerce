@@ -82,16 +82,20 @@ export async function updateWooAndStampDB(
     console.log(`[DRY_RUN] would PUT /products/${wooId}`, payload);
   }
 
-  await sequelize.transaction(async (t) => {
-    if (!row.WOO_IdProducto || String(row.WOO_IdProducto) !== String(wooId)) {
-      row.WOO_IdProducto = String(wooId);
-    }
-    row.WOO_PrecVtaArt = Number(priceStr);
-    row.WOO_Disponible = qty;
-    row.WOO_Activo2 = row.WOO_Activo2 ?? "S"; // or set 'S' explicitly if agreed
-    row.WOO_FecUltActWeb = new Date();
-    await row.save({ transaction: t });
-  });
+  if (!DRY) {
+    await sequelize.transaction(async (t) => {
+      if (!row.WOO_IdProducto || String(row.WOO_IdProducto) !== String(wooId)) {
+        row.WOO_IdProducto = String(wooId);
+      }
+      row.WOO_PrecVtaArt = Number(priceStr);
+      row.WOO_Disponible = qty;
+      row.WOO_Activo2 = row.WOO_Activo2 ?? "S";
+      row.WOO_FecUltActWeb = new Date();
+      await row.save({ transaction: t });
+    });
+  } else {
+    console.log(`[DRY_RUN] skipping DB stamp for ${sku}`);
+  }
 
   return { sku, wooId, updated: true };
 }
