@@ -4,6 +4,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc",
     "db:check": "ts-node src/db/checkDb.ts",
     "sync:one": "ts-node src/dev/syncOne.ts",
     "sync:diffs": "ts-node src/jobs/syncDiffsOnce.ts"
