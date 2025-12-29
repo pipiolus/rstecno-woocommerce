@@ -57,7 +57,13 @@ export async function syncDiffsOnce(opts?: {
           Math.trunc(Number(row.ADS_Disponible ?? 0))
         );
 
-        await updateWooAndStampDB(sku, rsTecnoPrice, rsTecnoStock);
+        await updateWooAndStampDB(
+          sku,
+          rsTecnoPrice,
+          rsTecnoStock,
+          row.ART_PorcIVARI,
+          row.ART_Garantia
+        );
         updated++;
         if (updated % 10 === 0) {
           console.log(`progress: ${updated}/${diffs.length} updated`);

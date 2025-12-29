@@ -2,7 +2,7 @@ import { updateWooAndStampDB } from "../services/updateOne";
 
 (async () => {
   try {
-    const result = await updateWooAndStampDB("ABC123", 500500, 7);
+    const result = await updateWooAndStampDB("ABC123", 2963, 7, 10.5, 12);
     console.log("✅ Updated:", result);
     process.exit(0);
   } catch (error) {
